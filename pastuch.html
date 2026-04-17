@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Pastuch">
+<title>Pastuch</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #111; color: #f0f0f0; min-height: 100vh; display: flex; align-items: center; justify-content: center; }
+
+.panel { width: 100%; max-width: 360px; padding: 2rem 1.5rem; }
+
+.app-title { font-size: 32px; font-weight: 700; letter-spacing: -0.5px; margin-bottom: 2rem; text-align: center; }
+
+.conn-card { background: #1c1c1e; border: 1px solid #2c2c2e; border-radius: 16px; padding: 1rem 1.25rem; margin-bottom: 1rem; display: flex; align-items: center; gap: 10px; }
+.dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; transition: background 0.3s; background: #ffd60a; }
+.dot.connected { background: #30d158; }
+.dot.error { background: #ff453a; }
+.conn-label { font-size: 13px; color: #888; }
+.conn-label b { color: #f0f0f0; font-weight: 500; }
+
+.state-card { background: #1c1c1e; border: 1px solid #2c2c2e; border-radius: 20px; padding: 2rem 1.5rem; margin-bottom: 1rem; text-align: center; transition: border-color 0.4s; }
+.state-card.on { border-color: #30d158; }
+.state-card.off { border-color: #ff453a; }
+
+.state-indicator { width: 80px; height: 80px; border-radius: 50%; margin: 0 auto 1.25rem; display: flex; align-items: center; justify-content: center; transition: background 0.4s, box-shadow 0.4s; background: #2c2c2e; }
+.state-indicator.on { background: #30d15820; box-shadow: 0 0 32px #30d15844; }
+.state-indicator.off { background: #ff453a20; }
+.state-indicator svg { width: 36px; height: 36px; }
+
+.state-msg { font-size: 22px; font-weight: 700; margin-bottom: 4px; color: #888; transition: color 0.3s; }
+.state-msg.on { color: #30d158; }
+.state-msg.off { color: #ff453a; }
+.state-sub { font-size: 13px; color: #555; }
+
+.toggle-btn { width: 100%; padding: 18px; font-size: 18px; font-weight: 700; border: none; border-radius: 16px; background: #2c2c2e; color: #f0f0f0; cursor: pointer; transition: background 0.15s, transform 0.1s; letter-spacing: 0.02em; margin-top: 0.5rem; }
+.toggle-btn:active { transform: scale(0.97); background: #3a3a3c; }
+.toggle-btn:disabled { opacity: 0.4; }
+
+.log { font-size: 11px; color: #444; font-family: 'Menlo', monospace; padding: 8px 10px; background: #0a0a0a; border-radius: 8px; margin-top: 10px; min-height: 24px; word-break: break-all; text-align: left; }
+</style>
+</head>
+<body>
+<div class="panel">
+  <div class="app-title">Pastuch</div>
+
+  <div class="conn-card">
+    <div class="dot" id="conn-dot"></div>
+    <div class="conn-label" id="conn-text">Łączenie...</div>
+  </div>
+
+  <div class="state-card" id="state-card">
+    <div class="state-indicator" id="state-indicator">
+      <svg viewBox="0 0 24 24" fill="none" stroke="#555" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" id="state-icon">
+        <circle cx="12" cy="12" r="10"/>
+        <line x1="12" y1="8" x2="12" y2="12"/>
+        <line x1="12" y1="16" x2="12.01" y2="16"/>
+      </svg>
+    </div>
+    <div class="state-msg" id="state-msg">Oczekiwanie...</div>
+    <div class="state-sub" id="state-sub">brak danych z urządzenia</div>
+  </div>
+
+  <button class="toggle-btn" id="toggle-btn" onclick="sendToggle()" disabled>Toggle</button>
+  <div class="log" id="log">Inicjalizacja...</div>
+</div>
+
+<script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
+<script>
+var HOST = '22602b011b804e4e8ee08af7f50bf391.s1.eu.hivemq.cloud';
+var PORT = 8884;
+var USER = 'testa';
+var PASS = 'Despol007';
+var PREFIX = 'lk4';
+
+var client = null;
+var currentState = null;
+
+function setLog(msg) {
+  document.getElementById('log').textContent = new Date().toLocaleTimeString() + ' · ' + msg;
+}
+
+function setState(val) {
+  currentState = val;
+  var card = document.getElementById('state-card');
+  var ind = document.getElementById('state-indicator');
+  var msg = document.getElementById('state-msg');
+  var sub = document.getElementById('state-sub');
+  var icon = document.getElementById('state-icon');
+  var btn = document.getElementById('toggle-btn');
+
+  if (val === '1') {
+    card.className = 'state-card on';
+    ind.className = 'state-indicator on';
+    icon.setAttribute('stroke', '#30d158');
+    icon.innerHTML = '<polyline points="20 6 9 17 4 12"/>';
+    msg.className = 'state-msg on';
+    msg.textContent = 'Pastuch działa';
+    sub.textContent = 'OUT1 = WŁ';
+  } else if (val === '0') {
+    card.className = 'state-card off';
+    ind.className = 'state-indicator off';
+    icon.setAttribute('stroke', '#ff453a');
+    icon.innerHTML = '<line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>';
+    msg.className = 'state-msg off';
+    msg.textContent = 'Pastuch nie działa';
+    sub.textContent = 'OUT1 = WYŁ';
+  }
+  btn.disabled = false;
+}
+
+function connect() {
+  setLog('Łączenie z brokerem...');
+  client = mqtt.connect('wss://' + HOST + ':' + PORT + '/mqtt', {
+    username: USER,
+    password: PASS,
+    reconnectPeriod: 5000,
+    connectTimeout: 12000
+  });
+
+  client.on('connect', function() {
+    document.getElementById('conn-dot').className = 'dot connected';
+    document.getElementById('conn-text').innerHTML = '<b>Połączony</b>';
+    client.subscribe(PREFIX + '/out1');
+    setLog('Połączono. Subskrypcja: ' + PREFIX + '/out1');
+  });
+
+  client.on('message', function(topic, payload) {
+    var val = payload.toString().trim();
+    setState(val);
+    setLog('Odebrano: ' + topic + ' = ' + val);
+  });
+
+  client.on('error', function(err) {
+    document.getElementById('conn-dot').className = 'dot error';
+    document.getElementById('conn-text').innerHTML = '<b>Błąd połączenia</b>';
+    setLog('Błąd: ' + (err.message || err));
+  });
+
+  client.on('reconnect', function() {
+    document.getElementById('conn-dot').className = 'dot';
+    document.getElementById('conn-text').innerHTML = 'Ponowne łączenie...';
+    setLog('Reconnect...');
+  });
+
+  client.on('offline', function() {
+    document.getElementById('conn-dot').className = 'dot error';
+    document.getElementById('conn-text').innerHTML = '<b>Offline</b> · próba reconnect...';
+  });
+}
+
+function sendToggle() {
+  if (!client || !client.connected) { setLog('Brak połączenia.'); return; }
+  client.publish(PREFIX + '/cmd', 'out=out1');
+  setLog('Wysłano: toggle out1');
+}
+
+connect();
+</script>
+</body>
+</html>
